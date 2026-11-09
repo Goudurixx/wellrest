@@ -18,9 +18,9 @@ Finish a set, and the countdown starts on its own. When rest is over, it rings o
 
 ## Screenshots
 
-| Rest countdown | App | Settings |
-|:---:|:---:|:---:|
-| <img src="docs/images/notification.png" width="260" alt="Rest countdown notification" /> | <img src="docs/images/main.png" width="260" alt="Main screen" /> | <img src="docs/images/settings.png" width="260" alt="Settings screen" /> |
+| Rest countdown, next to WHOOP's own card | App |
+|:---:|:---:|
+| <img src="docs/images/notification.png" width="420" alt="WellRest rest countdown above the WHOOP workout notification" /> | <img src="docs/images/main.png" width="260" alt="WellRest main screen" /> |
 
 ## Why
 
