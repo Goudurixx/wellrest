@@ -43,7 +43,7 @@ starts a rest countdown the moment a set ends, and alerts you when it's time for
 stateDiagram-v2
     direction LR
     [*] --> Set: WHOOP card appears
-    Set --> Rest: “Up Next:” becomes visible<br/>(set lasted ≥ 4 s) → start countdown
+    Set --> Rest: “Up Next:” becomes visible<br/>(set lasted ≥ 2 s) → start countdown
     Rest --> Set: next set starts<br/>→ cancel countdown
     Rest --> Rest: countdown ends → ring once
     Set --> [*]: card gone > 5 s (workout over)
