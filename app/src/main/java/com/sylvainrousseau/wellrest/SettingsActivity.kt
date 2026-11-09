@@ -103,14 +103,8 @@ class SettingsActivity : Activity() {
         // --- About (store requirements: version, privacy policy, licences, trademark notice, contact)
         val about = section(col, "ABOUT")
         about.addView(row("Version", AppInfo.version(this)))
-        about.addView(action("Privacy policy") {
-            if (AppInfo.PRIVACY_URL.isNotEmpty()) AppInfo.open(this, AppInfo.PRIVACY_URL)
-            else AppInfo.showText(this, "Privacy", AppInfo.PRIVACY_SUMMARY)
-        })
-        if (AppInfo.PRIVACY_URL.isNotEmpty()) about.addView(action("Privacy summary") {
-            AppInfo.showText(this, "Privacy", AppInfo.PRIVACY_SUMMARY)
-        })
-        about.addView(action("Open-source licences") { AppInfo.showText(this, "Open-source licences", AppInfo.LICENSES) })
+        about.addView(action("Privacy") { AppInfo.showPrivacy(this) })
+        about.addView(action("Open-source licences") { AppInfo.showLicenses(this) })
         if (AppInfo.SUPPORT_EMAIL.isNotEmpty()) about.addView(action("Contact support") {
             AppInfo.open(this, "mailto:${AppInfo.SUPPORT_EMAIL}?subject=" + Uri.encode("WellRest ${AppInfo.version(this)}"))
         })

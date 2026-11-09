@@ -24,8 +24,8 @@ android {
         minSdk = 26
         targetSdk = 36 // Google Play: new apps & updates must target API 36 since 31 Aug 2026
         // CI overrides these from the git tag: ./gradlew bundleRelease -PversionName=1.5.0 -PversionCode=42
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 6
-        versionName = (findProperty("versionName") as String?) ?: "1.5.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 7
+        versionName = (findProperty("versionName") as String?) ?: "1.5.1"
     }
 
     signingConfigs {
