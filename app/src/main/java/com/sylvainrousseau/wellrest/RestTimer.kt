@@ -43,8 +43,18 @@ object RestTimer {
     private var endElapsed = 0L
     private var totalMs = 0L
     private var nextName: String? = null
-    /** true while RestService holds the notification as a foreground service */
-    @Volatile var foreground = false
+    /** Increments with every rest; a Skip tap only stops the rest it was shown on. */
+    @Volatile var generation = 0; private set
+
+    /**
+     * RestService lifecycle. Android kills the app if a service started with
+     * startForegroundService() is stopped before it has called startForeground(), so the
+     * service is never stopped from outside while PENDING: it checks [isRunning] itself.
+     */
+    enum class Svc { NONE, PENDING, FOREGROUND }
+    @Volatile var svc = Svc.NONE
+    /** true while RestService holds the notification (card can be colorized) */
+    val foreground get() = svc == Svc.FOREGROUND
 
     private val tick = object : Runnable {
         lateinit var ctx: Context
@@ -58,30 +68,44 @@ object RestTimer {
 
     fun start(ctx: Context, seconds: Int, next: String? = null) {
         val app = ctx.applicationContext
-        cancelInternal(app)
         ensureChannel(app)
+        handler.removeCallbacks(tick)
 
+        generation++
         totalMs = seconds * 1000L
         endElapsed = SystemClock.elapsedRealtime() + totalMs
         nextName = next?.takeIf { it.isNotBlank() }
         isRunning = true
 
+        wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = (app.getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WellRest:rest")
             .apply { acquire(totalMs + 10_000) }
 
-        foreground = false
-        try {
-            app.startForegroundService(Intent(app, RestService::class.java))
-        } catch (t: Throwable) {
-            LogStore.add("foreground service refused (${t.javaClass.simpleName}), using plain notification")
-            notifyNow(app)
+        when (svc) {
+            // Service already holds the card: just refresh it with the new countdown
+            Svc.FOREGROUND, Svc.PENDING -> notifyNow(app)
+            Svc.NONE -> try {
+                svc = Svc.PENDING
+                app.startForegroundService(Intent(app, RestService::class.java))
+            } catch (t: Throwable) {
+                svc = Svc.NONE
+                LogStore.add("foreground service refused (${t.javaClass.simpleName}), using plain notification")
+                notifyNow(app)
+            }
         }
         tick.ctx = app
         handler.post(tick)
     }
 
     fun stop(ctx: Context) = finish(ctx.applicationContext, rang = false)
+
+    /** Skip button: ignored if it belongs to an earlier rest. */
+    fun skip(ctx: Context, gen: Int) {
+        if (gen != generation) { LogStore.add("stale skip ignored"); return }
+        LogStore.add("skipped by user")
+        stop(ctx)
+    }
 
     private fun finish(ctx: Context, rang: Boolean) {
         val wasRunning = isRunning
@@ -95,7 +119,11 @@ object RestTimer {
     private fun cancelInternal(ctx: Context) {
         handler.removeCallbacks(tick)
         isRunning = false
-        ctx.stopService(Intent(ctx, RestService::class.java))
+        // Only stop the service once it is in the foreground; a PENDING one stops itself
+        if (svc == Svc.FOREGROUND) {
+            ctx.stopService(Intent(ctx, RestService::class.java))
+            svc = Svc.NONE
+        }
         nm(ctx).cancel(NOTIF_ID)
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
@@ -116,7 +144,7 @@ object RestTimer {
         val base = now + left + 999
 
         val skipPi = PendingIntent.getBroadcast(
-            ctx, 0, Intent(ctx, StopReceiver::class.java),
+            ctx, generation, Intent(ctx, StopReceiver::class.java).putExtra(StopReceiver.EXTRA_GEN, generation),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val openPi = PendingIntent.getActivity(
@@ -212,32 +240,42 @@ class RestService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        RestTimer.foreground = true
-        val n = RestTimer.build(this)
+        // Always honour the startForeground() contract first, even if the rest was already
+        // skipped or cancelled meanwhile: skipping it is what got the app killed before.
+        RestTimer.svc = RestTimer.Svc.FOREGROUND
         try {
             ServiceCompat.startForeground(
-                this, RestTimer.NOTIF_ID, n,
+                this, RestTimer.NOTIF_ID, RestTimer.build(this),
                 if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
             )
         } catch (t: Throwable) {
-            RestTimer.foreground = false
+            RestTimer.svc = RestTimer.Svc.NONE
             LogStore.add("startForeground failed (${t.javaClass.simpleName}), plain notification")
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!RestTimer.isRunning) stopSelf()
+        if (!RestTimer.isRunning) {
+            // Rest ended while the service was starting: leave cleanly
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            RestTimer.svc = RestTimer.Svc.NONE
+            stopSelf()
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        RestTimer.foreground = false
+        // A new rest may already have restarted the service; only reset if nothing is running
+        if (!RestTimer.isRunning) RestTimer.svc = RestTimer.Svc.NONE
         super.onDestroy()
     }
 }
 
 class StopReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        LogStore.add("skipped by user")
-        RestTimer.stop(context)
+        RestTimer.skip(context, intent?.getIntExtra(EXTRA_GEN, -1) ?: -1)
+    }
+
+    companion object {
+        const val EXTRA_GEN = "gen"
     }
 }
