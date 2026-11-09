@@ -149,6 +149,6 @@ class WhoopListener : NotificationListenerService() {
 
     companion object {
         @Volatile var connected = false
-        private const val MIN_SET_MS = 4_000L
+        private const val MIN_SET_MS = 2_000L
     }
 }
