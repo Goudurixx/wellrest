@@ -8,9 +8,31 @@
   body { font-family: system-ui, -apple-system, sans-serif; max-width: 680px; margin: 0 auto; padding: 32px 16px; line-height: 1.6; color: #e8ecef; background: #101418; }
   h1 { font-size: 1.6rem; } h2 { font-size: 1.1rem; margin-top: 2rem; color: #16ec9f; }
   a { color: #16ec9f; } .muted { color: #8a939c; font-size: .9rem; }
+  .back { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-weight: 800; letter-spacing: .14em; font-size: 13px; }
+  .back img { width: 28px; height: 28px; border-radius: 8px; transition: transform .3s; }
+  .back:hover img { transform: rotate(-12deg) scale(1.06); }
+  h2 { position: relative; padding-left: 14px; }
+  h2::before { content: ""; position: absolute; left: 0; top: .2em; bottom: .2em; width: 3px; border-radius: 3px; background: #16ec9f;
+               transform: scaleY(0); transform-origin: top; transition: transform .6s .15s cubic-bezier(.2,.7,.2,1); }
+  /* reading progress */
+  #progress { position: fixed; top: 0; left: 0; height: 3px; width: 100%; background: #16ec9f; transform-origin: left; transform: scaleX(0);
+              box-shadow: 0 0 8px rgba(22,236,159,.6); z-index: 1; }
+  /* scroll reveal (only when JS is running, so the page is never blank) */
+  .js .rv { opacity: 0; transform: translateY(12px); transition: opacity .6s ease, transform .6s cubic-bezier(.2,.7,.2,1); }
+  .js .rv.on { opacity: 1; transform: none; }
+  .js h2.on::before { transform: scaleY(1); }
+  html:not(.js) h2::before { transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .js .rv { opacity: 1; transform: none; transition: none; }
+    h2::before { transform: none; transition: none; }
+    #progress { display: none; }
+  }
 </style>
+<script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
+<div id="progress" aria-hidden="true"></div>
+<p><a class="back" href="./"><img src="images/icon.png" alt="">WELLREST</a></p>
 <h1>WellRest – Privacy Policy</h1>
 <p class="muted">Last updated: 9 November 2026</p>
 
@@ -44,5 +66,21 @@
 
 <h2>Contact</h2>
 <p>Questions: <a href="mailto:sylvain.rousseau.apps@gmail.com">sylvain.rousseau.apps@gmail.com</a></p>
+<script>
+(() => {
+  const els = document.querySelectorAll("body > h1, body > p, body > h2, body > ul");
+  els.forEach((el, i) => { el.classList.add("rv"); el.style.transitionDelay = (i < 4 ? i * 90 : 0) + "ms"; });
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add("on"); io.unobserve(e.target); }
+  }), { rootMargin: "0px 0px -8% 0px" });
+  els.forEach(el => io.observe(el));
+  const bar = document.getElementById("progress");
+  const upd = () => {
+    const h = document.documentElement.scrollHeight - innerHeight;
+    bar.style.transform = "scaleX(" + (h > 0 ? scrollY / h : 1) + ")";
+  };
+  addEventListener("scroll", upd, { passive: true }); addEventListener("resize", upd); upd();
+})();
+</script>
 </body>
 </html>
