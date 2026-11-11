@@ -44,7 +44,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (keystoreProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
+            signingConfig = when {
+                keystoreProps.isNotEmpty() -> signingConfigs.getByName("release")
+                // CI preview releases before the upload key is configured: installable, not for Play
+                findProperty("previewSigning") == "true" -> signingConfigs.getByName("debug")
+                else -> null
+            }
         }
         debug {
             versionNameSuffix = "-debug"

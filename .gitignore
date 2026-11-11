@@ -1,8 +1,26 @@
+# Android / Gradle
 .gradle/
 build/
-app/build/
 local.properties
 keystore.properties
 *.jks
 *.keystore
 build.log
+
+# iOS / Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+.swiftpm/
+*.ipa
+*.dSYM.zip
+*.mobileprovision
+*.p12
+*.p8
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# OS
+.DS_Store

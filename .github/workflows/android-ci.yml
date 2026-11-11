@@ -1,19 +1,24 @@
-name: CI
+name: Android CI
 
 on:
   push:
     branches: [main]
+    paths: ["android/**", ".github/workflows/android-ci.yml"]
   pull_request:
+    paths: ["android/**", ".github/workflows/android-ci.yml"]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: android-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build & lint
+    name: Build & lint (Android)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +28,8 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: android
 
       - name: Build debug APK and run lint
         run: ./gradlew --no-daemon assembleDebug lintDebug
@@ -33,12 +40,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wellrest-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: lint-report
-          path: app/build/reports/lint-results-debug.html
+          path: android/app/build/reports/lint-results-debug.html
           retention-days: 14
