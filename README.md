@@ -4,19 +4,29 @@
 
 # WellRest
 
-**Automatic rest timer for WHOOP strength workouts on Android.**
+**Automatic rest timer for WHOOP strength workouts.**
 Finish a set, and the countdown starts on its own. When rest is over, it rings once.
 
-[![CI](https://github.com/Goudurixx/wellrest/actions/workflows/ci.yml/badge.svg)](https://github.com/Goudurixx/wellrest/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Goudurixx/wellrest?sort=semver)](https://github.com/Goudurixx/wellrest/releases/latest)
+[![Android CI](https://github.com/Goudurixx/wellrest/actions/workflows/android-ci.yml/badge.svg)](https://github.com/Goudurixx/wellrest/actions/workflows/android-ci.yml)
+[![iOS CI](https://github.com/Goudurixx/wellrest/actions/workflows/ios-ci.yml/badge.svg)](https://github.com/Goudurixx/wellrest/actions/workflows/ios-ci.yml)
+[![Release](https://img.shields.io/github/v/release/Goudurixx/wellrest?include_prereleases&sort=date)](https://github.com/Goudurixx/wellrest/releases)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-16EC9F?logo=android&logoColor=white)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin&logoColor=white)
+![iOS 26 — in progress](https://img.shields.io/badge/iOS%2026-in%20progress-8A939C?logo=apple&logoColor=white)
 
 </div>
 
 ---
 
-## Screenshots
+## Platforms
+
+| | Folder | Status |
+|---|---|---|
+| **Android** (Kotlin) | [`android/`](android) | ✅ Working, automatic start from WHOOP's notification. Google Play coming soon |
+| **iOS** (SwiftUI) | [`ios/`](ios) | 🚧 Planned: manual one-tap start + Live Activity. See the [handover plan](ios/HANDOVER.md) |
+| Website & privacy policy | [`docs/`](docs) | ✅ [goudurixx.github.io/wellrest](https://goudurixx.github.io/wellrest/) |
+| Shared design tokens & copy | [`shared/`](shared) | Used by both apps |
+
+## Screenshots (Android)
 
 | Rest countdown, next to WHOOP's own card | App |
 |:---:|:---:|
@@ -37,7 +47,7 @@ starts a rest countdown the moment a set ends, and alerts you when it's time for
 - **Smart cancel** — stops by itself if you start the next set early
 - **Private by design** — no internet permission, no account, no analytics; everything stays on the phone
 
-## How it works
+## How it works (Android)
 
 ```mermaid
 stateDiagram-v2
@@ -61,7 +71,7 @@ stateDiagram-v2
 
 ## Install
 
-Download the latest APK from [Releases](https://github.com/Goudurixx/wellrest/releases/latest)
+Download the latest APK from [Releases](https://github.com/Goudurixx/wellrest/releases)
 (Google Play listing coming soon), then:
 
 1. Open WellRest and allow **Notification access** when asked.
@@ -71,24 +81,32 @@ Download the latest APK from [Releases](https://github.com/Goudurixx/wellrest/re
 
 ## Build
 
-Requirements: JDK 17, Android SDK 36.
+**Android:** JDK 17, Android SDK 36.
 
 ```bash
-./gradlew assembleDebug        # app/build/outputs/apk/debug/
+cd android
+./gradlew assembleDebug        # android/app/build/outputs/apk/debug/
 ./gradlew lintDebug
 ```
 
+**iOS:** Xcode 26. See [`ios/README.md`](ios/README.md).
+
 ## Releasing
 
-Releases are built, signed and published by [`release.yml`](.github/workflows/release.yml) when a version tag is pushed:
+Each platform has its own tag prefix, so the two release streams stay separate.
+
+**Android:** [`android-release.yml`](.github/workflows/android-release.yml) runs on `android-v*` tags:
 
 ```bash
-git tag v1.5.0 && git push origin v1.5.0
+git tag android-v1.5.4 && git push origin android-v1.5.4
 ```
 
-The workflow derives `versionCode` from the tag (`1.5.0` → `10500`), builds the signed **AAB** and
-**APK**, attaches them to a GitHub Release with generated notes, and — if Play credentials are
-configured — uploads the AAB to the Play **internal testing** track.
+The workflow derives `versionCode` from the tag (`1.5.4` → `10504`), builds the signed **AAB** and
+**APK**, attaches them to a GitHub Release with notes, and, if Play credentials are configured,
+uploads the AAB to the Play **internal testing** track. Until the signing secrets below exist, it
+publishes a **pre-release with a debug-signed preview APK** instead (installable, not for Play).
+
+**iOS:** `ios-v*` tags, pipeline to be added (see [handover §7](ios/HANDOVER.md#7-release-pipeline-to-add-at-milestone-7)).
 
 | Repository secret | Value |
 |---|---|
@@ -106,12 +124,12 @@ keytool -genkeypair -v -keystore upload-keystore.jks -alias upload \
 ```
 
 For local release builds, put the same values in `keystore.properties` (git-ignored) — see
-[`app/build.gradle.kts`](app/build.gradle.kts). Store submission notes are in [`docs/STORE.md`](docs/STORE.md).
+[`android/app/build.gradle.kts`](android/app/build.gradle.kts). Store submission notes are in [`android/STORE.md`](android/STORE.md).
 
 ## Privacy
 
-WellRest reads only the WHOOP app's workout notification, processes it on the device and never
-transmits anything. Full policy: **[goudurixx.github.io/wellrest/privacy-policy.html](https://goudurixx.github.io/wellrest/privacy-policy.html)**
+On Android, WellRest reads only the WHOOP app's workout notification, processes it on the device and
+never transmits anything. Neither app collects data. Full policy: **[goudurixx.github.io/wellrest/privacy-policy.html](https://goudurixx.github.io/wellrest/privacy-policy.html)**
 
 ## Disclaimer
 

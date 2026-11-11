@@ -1,0 +1,128 @@
+name: Android Release
+
+# Push a tag like android-v1.5.4 to build and publish an Android release:
+#   git tag android-v1.5.4 && git push origin android-v1.5.4
+#
+# With the upload-key secrets set (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD):
+#   signed APK + AAB on GitHub Releases, and the AAB goes to Play internal testing if
+#   PLAY_SERVICE_ACCOUNT_JSON is set too.
+# Without them: a pre-release with a debug-signed preview APK (installable, not for Play).
+on:
+  push:
+    tags: ["android-v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name (e.g. 1.5.4)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish (Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    env:
+      HAS_PLAY_CREDENTIALS: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          NAME="${{ github.event.inputs.version }}"
+          [ -z "$NAME" ] && NAME="${GITHUB_REF_NAME#android-v}"
+          IFS=. read -r MAJ MIN PAT <<< "$NAME"
+          CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))   # 1.5.3 -> 10503, always increasing
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Releasing $NAME ($CODE)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: android
+
+      - name: Restore upload keystore
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::Upload-key secrets not set — publishing a debug-signed PREVIEW (see README › Releasing)"
+            echo "signed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          cat > keystore.properties <<PROPS
+          storeFile=$RUNNER_TEMP/upload.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: >
+          ./gradlew --no-daemon assembleRelease
+          ${{ steps.signing.outputs.signed == 'true' && 'bundleRelease' || '-PpreviewSigning=true' }}
+          -PversionName=${{ steps.version.outputs.name }}
+          -PversionCode=${{ steps.version.outputs.code }}
+
+      - name: Collect outputs
+        id: dist
+        run: |
+          V=${{ steps.version.outputs.name }}
+          mkdir dist
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            cp app/build/outputs/apk/release/app-release.apk dist/WellRest-$V.apk
+            cp app/build/outputs/bundle/release/app-release.aab dist/WellRest-$V.aab
+            cp app/build/outputs/mapping/release/mapping.txt dist/mapping-$V.txt
+          else
+            cp app/build/outputs/apk/release/app-release.apk dist/WellRest-$V-preview.apk
+          fi
+          ls -la dist
+
+      - name: Release notes
+        run: |
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            printf '%s\n' "Install the APK on Android 8.0+, or get it from Google Play when available." \
+              "" "Setup: open WellRest and allow **Notification access**, then set battery use to *Unrestricted*." > notes.md
+          else
+            printf '%s\n' "**Preview build.** Signed with a development key: it installs and works, but a later" \
+              "signed release (or the Play Store version) will need you to uninstall this one first." \
+              "" "Setup: open WellRest and allow **Notification access** (sideloaded installs: App info → ⋮ →" \
+              "*Allow restricted settings* first), then set battery use to *Unrestricted*." > notes.md
+          fi
+
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.version.outputs.name }}
+          name: WellRest for Android ${{ steps.version.outputs.name }}${{ steps.signing.outputs.signed != 'true' && ' (preview)' || '' }}
+          prerelease: ${{ steps.signing.outputs.signed != 'true' }}
+          body_path: android/notes.md
+          generate_release_notes: true
+          files: android/dist/*
+
+      - name: Upload to Google Play (internal testing)
+        if: env.HAS_PLAY_CREDENTIALS == 'true' && steps.signing.outputs.signed == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.sylvainrousseau.wellrest
+          releaseFiles: android/dist/WellRest-${{ steps.version.outputs.name }}.aab
+          mappingFile: android/dist/mapping-${{ steps.version.outputs.name }}.txt
+          track: internal
+          status: completed

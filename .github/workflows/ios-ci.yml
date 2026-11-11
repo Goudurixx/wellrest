@@ -1,0 +1,48 @@
+name: iOS CI
+
+# Builds and tests the iOS app on every change under ios/.
+# Skips cleanly until ios/WellRest.xcodeproj exists (see ios/HANDOVER.md, milestone 1).
+on:
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios-ci.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios-ci.yml"]
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & test (iOS)
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Xcode project
+        id: project
+        run: |
+          if [ -d WellRest.xcodeproj ]; then echo "exists=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::No ios/WellRest.xcodeproj yet — skipping iOS build"; echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Select Xcode 26
+        if: steps.project.outputs.exists == 'true'
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -z "$XCODE" ] && { echo "::error::Xcode 26 not found on this runner image"; ls -d /Applications/Xcode*.app; exit 1; }
+          sudo xcode-select -s "$XCODE"; xcodebuild -version
+
+      - name: Build and test
+        if: steps.project.outputs.exists == 'true'
+        run: |
+          set -o pipefail
+          DEST=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone 1[6-9][^(]*' | sed 's/ *$//')
+          xcodebuild test \
+            -project WellRest.xcodeproj -scheme WellRest \
+            -destination "platform=iOS Simulator,name=${DEST:-iPhone 16}" \
+            CODE_SIGNING_ALLOWED=NO

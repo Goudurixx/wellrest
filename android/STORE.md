@@ -7,7 +7,7 @@
 3. Privacy policy: https://goudurixx.github.io/wellrest/privacy-policy.html (GitHub Pages, branch `main`, folder `/docs`).
    Support email: sylvain.rousseau.apps@gmail.com
 4. Create the upload key and add the repository secrets listed in the README, then release by
-   pushing a tag (`git tag v1.5.0 && git push origin v1.5.0`). The first AAB must be uploaded to
+   pushing a tag (`git tag android-v1.5.4 && git push origin android-v1.5.4`). The first AAB must be uploaded to
    Play Console manually; later ones go to the internal track automatically once
    `PLAY_SERVICE_ACCOUNT_JSON` is set.
 

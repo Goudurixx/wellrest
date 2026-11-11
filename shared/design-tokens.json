@@ -1,0 +1,40 @@
+{
+  "$comment": "Single source of truth for WellRest's look on Android and iOS. Android mirror: android/app/src/main/res/values/colors.xml. Change both when editing.",
+  "color": {
+    "background":     { "hex": "#101418", "use": "app background, window" },
+    "card":           { "hex": "#1B2228", "use": "cards, notification / Live Activity background, dialog sheets" },
+    "cardStroke":     { "hex": "#2A323A", "use": "card borders, dividers" },
+    "ring":           { "hex": "#3A434C", "use": "rest ring track" },
+    "accent":         { "hex": "#16EC9F", "use": "primary green: countdown digits, primary buttons, progress, selected chips" },
+    "accentDark":     { "hex": "#0B3D2C", "use": "selected chip fill, icon badge background, pressed state" },
+    "onAccent":       { "hex": "#0E1215", "use": "text/icons placed on the green accent" },
+    "text":           { "hex": "#FFFFFF", "use": "primary text" },
+    "textDim":        { "hex": "#8A939C", "use": "secondary text, labels" },
+    "warning":        { "hex": "#F5B83D", "use": "status: waiting" },
+    "error":          { "hex": "#FF3B4A", "use": "status: setup needed" }
+  },
+  "radius": {
+    "card": 20,
+    "sheet": 28,
+    "notification": 16,
+    "pill": 999
+  },
+  "type": {
+    "countdown":     { "size": 72, "weight": "bold", "family": "condensed / monospaced digits", "use": "main screen ring time" },
+    "countdownCard": { "size": 46, "weight": "bold", "family": "condensed / monospaced digits", "use": "Live Activity / notification countdown" },
+    "sectionLabel":  { "size": 12, "weight": "bold", "tracking": 0.14, "case": "upper", "use": "REST, SETTINGS, section headers" },
+    "title":         { "size": 22, "weight": "bold" },
+    "body":          { "size": 15, "weight": "regular" }
+  },
+  "rest": {
+    "defaultSeconds": 60,
+    "minSeconds": 15,
+    "maxSeconds": 600,
+    "stepSeconds": 15,
+    "presetsSeconds": [30, 45, 60, 90, 120]
+  },
+  "haptics": {
+    "endOfRest": "double buzz: 400 ms on, 150 ms off, 400 ms on",
+    "controlTap": "light tick on -15/+15 and preset taps"
+  }
+}
