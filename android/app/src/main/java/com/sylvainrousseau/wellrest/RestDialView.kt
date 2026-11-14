@@ -34,7 +34,13 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
 
     /** When true, the dial shows the running countdown instead of the setting. */
     var running = false
-        set(v) { field = v; if (v) dragging = false; invalidate(); updateDescription() }
+        set(v) {
+            val wasRunning = field
+            field = v
+            if (v) { dragging = false; refilling = false }
+            else if (wasRunning && isAttachedToWindow) startRefill()
+            invalidate(); updateDescription()
+        }
 
     private val minS = 15
     private val maxS = 600
@@ -89,6 +95,23 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
 
     // knob animation: shown angle eases toward the target detent
     private var shownDeg = 0f
+
+    // refill animation after a rest is stopped or finishes
+    private var refilling = false
+    private var refillStart = 0L
+    private var refillFromDeg = 0f
+    private var refillFromMs = 0L
+    private var lastRunSweep = 0f
+    private var lastRunLeftMs = 0L
+    private val refillMs = 950L
+    private val refillEase = android.view.animation.OvershootInterpolator(1.3f)
+
+    private fun startRefill() {
+        refilling = true
+        refillStart = android.os.SystemClock.uptimeMillis()
+        refillFromDeg = lastRunSweep
+        refillFromMs = lastRunLeftMs
+    }
 
     init {
         isClickable = true
@@ -157,14 +180,29 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     }
 
     private fun drawIdle(canvas: Canvas) {
-        // ease the knob toward its detent
         val target = targetDeg()
-        val diff = target - shownDeg
-        shownDeg = if (abs(diff) < 0.4f) target else shownDeg + diff * 0.35f
-        if (shownDeg != target) postInvalidateOnAnimation()
+        var p = 1f                      // refill progress (overshoots slightly past 1)
+        var shownMs = value * 1000L
+        if (refilling) {
+            val t = ((android.os.SystemClock.uptimeMillis() - refillStart) / refillMs.toFloat()).coerceIn(0f, 1f)
+            p = refillEase.getInterpolation(t)
+            shownDeg = refillFromDeg + (target - refillFromDeg) * p
+            val pm = (refillFromMs + (value * 1000L - refillFromMs) * t.let { 1 - (1 - it) * (1 - it) * (1 - it) }).toLong()
+            shownMs = pm.coerceIn(0, value * 1000L)
+            if (t >= 1f) { refilling = false; shownDeg = target; shownMs = value * 1000L; haptics.grab() }
+            postInvalidateOnAnimation()
+        } else {
+            // ease the knob toward its detent
+            val diff = target - shownDeg
+            shownDeg = if (abs(diff) < 0.4f) target else shownDeg + diff * 0.35f
+            if (shownDeg != target) postInvalidateOnAnimation()
+        }
 
-        // full laps (each extra minute) drawn faintly underneath
-        if (value >= secondsPerTurn) canvas.drawCircle(cx, cy, r, lap)
+        // full laps (each extra minute) drawn faintly underneath, fading in during the refill
+        if (value >= secondsPerTurn) {
+            lap.alpha = (70 * p.coerceIn(0f, 1f)).toInt()
+            canvas.drawCircle(cx, cy, r, lap)
+        }
         if (shownDeg > 0.5f) canvas.drawArc(oval, -90f, shownDeg, false, arc)
         drawTicks(canvas, shownDeg, faded = false)
 
@@ -179,7 +217,7 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
         // centre
         label.color = if (dragging) cGreen else cText
         canvas.drawText("REST", cx, cy - r * 0.36f, label)
-        drawTime(canvas, value * 1000L)
+        drawTime(canvas, shownMs)
         drawButton(canvas, "START", filled = true)
     }
 
@@ -187,6 +225,8 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
         val total = RestTimer.totalDurationMs.coerceAtLeast(1)
         val left = RestTimer.remainingMs
         val sweep = 360f * left / total
+        lastRunSweep = sweep
+        lastRunLeftMs = left
         drawTicks(canvas, 0f, faded = true)
         if (sweep > 0.5f) canvas.drawArc(oval, -90f, sweep, false, arc)
         // leading dot
@@ -236,6 +276,7 @@ class RestDialView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                 // anywhere else on the dial grabs the crown (ignore the very centre)
                 if (running || hypot(e.x - cx, e.y - cy) < r * 0.3f) return false
                 dragging = true
+                if (refilling) { refilling = false; shownDeg = targetDeg() }
                 lastAngle = angleOf(e.x, e.y)
                 accum = value.toFloat()
                 atLimit = false
