@@ -95,13 +95,14 @@ cd android
 
 Each platform has its own tag prefix, so the two release streams stay separate.
 
-**Android:** [`android-release.yml`](.github/workflows/android-release.yml) runs on `android-v*` tags:
+**Android:** [`android-release.yml`](.github/workflows/android-release.yml) releases automatically:
+bump `versionName` (and the default `versionCode`) in
+[`android/app/build.gradle.kts`](android/app/build.gradle.kts), push to `main`, and the workflow builds
+and publishes **android-vX.Y.Z**. Pushes that don't change the version, or whose version already has a
+release, are skipped. A tag (`git tag android-v1.6.3 && git push origin android-v1.6.3`) or
+**Actions → Android Release → Run workflow** (optionally with a commit) works too.
 
-```bash
-git tag android-v1.5.4 && git push origin android-v1.5.4
-```
-
-The workflow derives `versionCode` from the tag (`1.5.4` → `10504`), builds the signed **AAB** and
+The workflow derives `versionCode` from the version (`1.6.2` → `10602`), builds the signed **AAB** and
 **APK**, attaches them to a GitHub Release with notes, and, if Play credentials are configured,
 uploads the AAB to the Play **internal testing** track. Until the signing secrets below exist, it
 publishes a **pre-release with a debug-signed preview APK** instead (installable, not for Play).

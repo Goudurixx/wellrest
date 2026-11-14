@@ -1,7 +1,9 @@
 name: Android Release
 
-# Push a tag like android-v1.5.4 to build and publish an Android release:
-#   git tag android-v1.5.4 && git push origin android-v1.5.4
+# Releases are automatic: every push to main that changes the app version
+# (versionName in android/app/build.gradle.kts) builds and publishes android-vX.Y.Z,
+# unless that release already exists. Tags like android-v1.5.4 also work, and
+# "Run workflow" can (re)build any version from a given commit.
 #
 # With the upload-key secrets set (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD):
 #   signed APK + AAB on GitHub Releases, and the AAB goes to Play internal testing if
@@ -9,12 +11,21 @@ name: Android Release
 # Without them: a pre-release with a debug-signed preview APK (installable, not for Play).
 on:
   push:
+    branches: [main]
+    paths: ["android/app/build.gradle.kts"]
     tags: ["android-v*.*.*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version name (e.g. 1.5.4)"
-        required: true
+        description: "Version name (e.g. 1.5.4). Empty = read it from the code"
+        required: false
+      commit:
+        description: "Commit to build (empty = latest main)"
+        required: false
+
+concurrency:
+  group: android-release-${{ github.ref }}-${{ github.event.inputs.commit }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -31,28 +42,46 @@ jobs:
       HAS_PLAY_CREDENTIALS: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit || github.sha }}
 
-      - name: Derive version from tag
+      - name: Work out the version
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           NAME="${{ github.event.inputs.version }}"
-          [ -z "$NAME" ] && NAME="${GITHUB_REF_NAME#android-v}"
+          if [ -z "$NAME" ] && [ "${{ github.ref_type }}" = "tag" ]; then NAME="${GITHUB_REF_NAME#android-v}"; fi
+          # Otherwise read the default versionName from the code being built
+          if [ -z "$NAME" ]; then NAME=$(grep -oE 'versionName = .*\?: "[0-9]+\.[0-9]+\.[0-9]+"' app/build.gradle.kts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'); fi
+          [[ "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Could not determine version (got '$NAME')"; exit 1; }
           IFS=. read -r MAJ MIN PAT <<< "$NAME"
           CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))   # 1.5.3 -> 10503, always increasing
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "Releasing $NAME ($CODE)"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # A push to main only releases a version that doesn't exist yet
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "branch" ] \
+             && gh release view "android-v$NAME" >/dev/null 2>&1; then
+            echo "android-v$NAME already released — nothing to do"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $NAME ($CODE) from $(git rev-parse --short HEAD)"; echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-java@v4
+        if: steps.version.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.version.outputs.skip != 'true'
         with:
           build-root-directory: android
 
       - name: Restore upload keystore
+        if: steps.version.outputs.skip != 'true'
         id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -74,6 +103,7 @@ jobs:
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Build
+        if: steps.version.outputs.skip != 'true'
         run: >
           ./gradlew --no-daemon assembleRelease
           ${{ steps.signing.outputs.signed == 'true' && 'bundleRelease' || '-PpreviewSigning=true' }}
@@ -81,6 +111,7 @@ jobs:
           -PversionCode=${{ steps.version.outputs.code }}
 
       - name: Collect outputs
+        if: steps.version.outputs.skip != 'true'
         id: dist
         run: |
           V=${{ steps.version.outputs.name }}
@@ -95,6 +126,7 @@ jobs:
           ls -la dist
 
       - name: Release notes
+        if: steps.version.outputs.skip != 'true'
         run: |
           if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
             printf '%s\n' "Install the APK on Android 8.0+, or get it from Google Play when available." \
@@ -107,9 +139,12 @@ jobs:
           fi
 
       - name: GitHub release
+        if: steps.version.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ steps.version.outputs.name }}
+          target_commitish: ${{ steps.version.outputs.sha }}
+          make_latest: ${{ github.event.inputs.commit == '' && 'true' || 'false' }}
           name: WellRest for Android ${{ steps.version.outputs.name }}${{ steps.signing.outputs.signed != 'true' && ' (preview)' || '' }}
           prerelease: ${{ steps.signing.outputs.signed != 'true' }}
           body_path: android/notes.md
@@ -117,7 +152,7 @@ jobs:
           files: android/dist/*
 
       - name: Upload to Google Play (internal testing)
-        if: env.HAS_PLAY_CREDENTIALS == 'true' && steps.signing.outputs.signed == 'true'
+        if: steps.version.outputs.skip != 'true' && env.HAS_PLAY_CREDENTIALS == 'true' && steps.signing.outputs.signed == 'true'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
