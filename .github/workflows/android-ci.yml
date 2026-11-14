@@ -28,8 +28,6 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          build-root-directory: android
 
       - name: Build debug APK and run lint
         run: ./gradlew --no-daemon assembleDebug lintDebug

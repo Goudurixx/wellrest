@@ -77,8 +77,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         if: steps.version.outputs.skip != 'true'
-        with:
-          build-root-directory: android
 
       - name: Restore upload keystore
         if: steps.version.outputs.skip != 'true'
@@ -128,6 +126,7 @@ jobs:
       - name: Release notes
         if: steps.version.outputs.skip != 'true'
         run: |
+          trap 'printf "\n\nBuilt from commit %s.\n" "${{ steps.version.outputs.sha }}" >> notes.md' EXIT
           if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
             printf '%s\n' "Install the APK on Android 8.0+, or get it from Google Play when available." \
               "" "Setup: open WellRest and allow **Notification access**, then set battery use to *Unrestricted*." > notes.md
@@ -143,7 +142,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ steps.version.outputs.name }}
-          target_commitish: ${{ steps.version.outputs.sha }}
+          # The workflow token can't tag an older commit whose workflow files differ from main,
+          # so backfilled releases are tagged on main; the notes name the commit actually built.
+          target_commitish: ${{ github.sha }}
           make_latest: ${{ github.event.inputs.commit == '' && 'true' || 'false' }}
           name: WellRest for Android ${{ steps.version.outputs.name }}${{ steps.signing.outputs.signed != 'true' && ' (preview)' || '' }}
           prerelease: ${{ steps.signing.outputs.signed != 'true' }}
