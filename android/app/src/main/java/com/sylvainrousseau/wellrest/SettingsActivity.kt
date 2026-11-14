@@ -60,6 +60,10 @@ class SettingsActivity : Activity() {
             })
         }
         setup.addView(action("Notification access") { AppInfo.requestNotificationAccess(this) })
+        setup.addView(action("Reconnect to WHOOP") {
+            ListenerHealth.forceRebind(this)
+            status.postDelayed({ onResume() }, 2500)
+        })
         setup.addView(action("Battery: set to Unrestricted") {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:$packageName")))
         })
@@ -123,7 +127,7 @@ class SettingsActivity : Activity() {
         val granted = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         status.text = when {
             !granted -> "⚠️  Notification access not granted. Tap “Notification access” below."
-            !WhoopListener.connected -> "⏳  Access granted, listener not connected yet. Toggle access off and on if this persists."
+            !WhoopListener.connected -> "⏳  Access granted but not connected. Use Reconnect below, and set battery to Unrestricted."
             else -> "✅  Listening for WHOOP notifications."
         }
         log.text = LogStore.dump()
