@@ -40,9 +40,15 @@ object RestTimer {
     private val handler = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
 
-    @Volatile var isRunning = false; private set
+    @Volatile var isRunning = false
+        private set(v) { field = v; handler.post { onStateChanged?.invoke() } }
     private var endElapsed = 0L
     private var totalMs = 0L
+
+    /** UI hook: called on the main thread whenever a rest starts or ends. */
+    @Volatile var onStateChanged: (() -> Unit)? = null
+    val remainingMs: Long get() = if (isRunning) (endElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0) else 0
+    val totalDurationMs: Long get() = totalMs
     private var nextName: String? = null
     /** Increments with every rest; a Skip tap only stops the rest it was shown on. */
     @Volatile var generation = 0; private set
@@ -67,14 +73,18 @@ object RestTimer {
         }
     }
 
-    fun start(ctx: Context, seconds: Int, next: String? = null) {
+    /**
+     * @param alreadyElapsedMs how long the rest has already been going (from WHOOP's own rest
+     *   clock), so the countdown lines up with WHOOP even if its notification arrived late.
+     */
+    fun start(ctx: Context, seconds: Int, next: String? = null, alreadyElapsedMs: Long = 0) {
         val app = ctx.applicationContext
         ensureChannel(app)
         handler.removeCallbacks(tick)
 
         generation++
         totalMs = seconds * 1000L
-        endElapsed = SystemClock.elapsedRealtime() + totalMs
+        endElapsed = SystemClock.elapsedRealtime() + totalMs - alreadyElapsedMs.coerceIn(0, totalMs)
         nextName = next?.takeIf { it.isNotBlank() }
         isRunning = true
 
@@ -100,6 +110,23 @@ object RestTimer {
     }
 
     fun stop(ctx: Context) = finish(ctx.applicationContext, rang = false)
+
+    /**
+     * Keep the running countdown aligned with WHOOP's rest clock. Small jitter is ignored;
+     * a drift over 1.5 s (late or batched notification delivery) is corrected.
+     */
+    fun syncElapsed(ctx: Context, elapsedMs: Long) {
+        if (!isRunning) return
+        val wantedEnd = SystemClock.elapsedRealtime() + totalMs - elapsedMs
+        val drift = wantedEnd - endElapsed
+        if (kotlin.math.abs(drift) < 1500) return
+        endElapsed = wantedEnd
+        LogStore.add("resynced with WHOOP (${if (drift > 0) "+" else ""}${drift / 1000.0}s)")
+        handler.removeCallbacks(tick)
+        tick.ctx = ctx.applicationContext
+        handler.post(tick)
+        onStateChanged?.let { handler.post(it) }
+    }
 
     /** Skip button: ignored if it belongs to an earlier rest. */
     fun skip(ctx: Context, gen: Int) {
