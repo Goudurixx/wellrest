@@ -2,19 +2,14 @@ package com.sylvainrousseau.wellrest
 
 import android.Manifest
 import android.app.Activity
-import android.content.ComponentName
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
-import android.service.notification.NotificationListenerService
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -23,21 +18,25 @@ class MainActivity : Activity() {
 
     private val presets = listOf(30, 45, 60, 90, 120)
     private lateinit var prefs: Prefs
-    private lateinit var time: TextView
+    private lateinit var dial: RestDialView
+    private lateinit var hint: TextView
     private lateinit var presetRow: LinearLayout
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
+    private lateinit var haptics: Haptics
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         setContentView(R.layout.activity_main)
-        applyInsets(this, findViewById(R.id.scroll))
+        applyInsets(this, findViewById(R.id.root))
 
-        time = findViewById(R.id.time)
+        dial = findViewById(R.id.dial)
+        hint = findViewById(R.id.hint)
         presetRow = findViewById(R.id.presets)
         statusDot = findViewById(R.id.statusDot)
         statusText = findViewById(R.id.statusText)
+        haptics = Haptics(dial)
 
         findViewById<View>(R.id.settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -49,19 +48,19 @@ class MainActivity : Activity() {
                 else -> startActivity(Intent(this, SettingsActivity::class.java))
             }
         }
-        findViewById<View>(R.id.minus).setOnClickListener { it.tick(); setRest(prefs.restSeconds - 15) }
-        findViewById<View>(R.id.plus).setOnClickListener { it.tick(); setRest(prefs.restSeconds + 15) }
+
+        dial.setValue(prefs.restSeconds, animate = false)
+        dial.onValueChanged = { s, final ->
+            if (final) prefs.restSeconds = s
+            renderPresets(s)
+        }
+        dial.onStartStop = {
+            if (RestTimer.isRunning) RestTimer.stop(this)
+            else RestTimer.start(this, prefs.restSeconds)
+        }
 
         buildPresets()
-
-        bindSwitch(R.id.swAuto, R.id.rowAuto, prefs.enabled) { prefs.enabled = it }
-        bindSwitch(R.id.swSound, R.id.rowSound, prefs.soundEnabled) {
-            prefs.soundEnabled = it
-            if (it) RestTimer.previewChime(this)   // let the user hear it straight away
-        }
-        bindSwitch(R.id.swCancel, R.id.rowCancel, prefs.cancelOnExercise) { prefs.cancelOnExercise = it }
-
-        render()
+        renderPresets(prefs.restSeconds)
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
     }
 
@@ -73,6 +72,10 @@ class MainActivity : Activity() {
             disclosureShownThisSession = true
             AppInfo.requestNotificationAccess(this)
         }
+        // Settings may have changed the rest length meanwhile
+        dial.setValue(prefs.restSeconds, animate = false)
+        renderPresets(prefs.restSeconds)
+        renderRunning()
         renderStatus()
         // Listener unbound while access is granted: ask nicely, then force it
         if (granted && !WhoopListener.connected) {
@@ -89,11 +92,13 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         WhoopListener.onConnectionChanged = { ui.post { if (WhoopListener.connected) reconnecting = false; renderStatus() } }
+        RestTimer.onStateChanged = { renderRunning() }
     }
 
     override fun onStop() {
         super.onStop()
         WhoopListener.onConnectionChanged = null
+        RestTimer.onStateChanged = null
     }
 
     override fun onPause() {
@@ -104,6 +109,14 @@ class MainActivity : Activity() {
 
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private var reconnecting = false
+
+    private fun renderRunning() {
+        val running = RestTimer.isRunning
+        dial.running = running
+        hint.text = if (running) "Rest in progress" else "Turn the ring to set your rest"
+        presetRow.alpha = if (running) 0.35f else 1f
+        for (i in 0 until presetRow.childCount) presetRow.getChildAt(i).isEnabled = !running
+    }
 
     private fun renderStatus() {
         val (color, text) = when {
@@ -145,16 +158,10 @@ class MainActivity : Activity() {
 
     private fun hasAccess() = ListenerHealth.hasAccess(this)
 
-    private fun setRest(seconds: Int) {
-        prefs.restSeconds = seconds
-        render()
-    }
-
-    private fun render() {
-        time.text = RestTimer.fmt(prefs.restSeconds * 1000L)
+    private fun renderPresets(seconds: Int) {
         for (i in 0 until presetRow.childCount) {
             val chip = presetRow.getChildAt(i)
-            chip.isSelected = chip.tag == prefs.restSeconds
+            chip.isSelected = chip.tag == seconds
         }
     }
 
@@ -169,22 +176,18 @@ class MainActivity : Activity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(getColorStateList(R.color.chip_text))
                 setBackgroundResource(R.drawable.bg_chip)
-                setOnClickListener { it.tick(); setRest(s) }
+                setOnClickListener {
+                    if (s / 60 != prefs.restSeconds / 60) haptics.minute() else haptics.detent()
+                    prefs.restSeconds = s
+                    dial.setValue(s)           // knob glides to the preset
+                    renderPresets(s)
+                }
             }
             presetRow.addView(chip, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
                 if (i > 0) marginStart = (8 * dp).toInt()
             })
         }
     }
-
-    private fun bindSwitch(switchId: Int, rowId: Int, initial: Boolean, onChange: (Boolean) -> Unit) {
-        val sw = findViewById<Switch>(switchId)
-        sw.isChecked = initial
-        sw.setOnCheckedChangeListener { _, c -> onChange(c) }
-        findViewById<View>(rowId).setOnClickListener { sw.toggle() }
-    }
-
-    private fun View.tick() = performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
 
     companion object {
         /** Edge-to-edge: pad content away from the status / navigation bars. */

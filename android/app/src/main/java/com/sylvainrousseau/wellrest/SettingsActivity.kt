@@ -16,6 +16,7 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
@@ -51,6 +52,17 @@ class SettingsActivity : Activity() {
         })
 
         // --- Setup
+        // --- Workout behaviour (moved from the main screen)
+        val workout = section(col, "WORKOUT")
+        workout.addView(toggle("Auto-start after each set", "Starts the rest when WHOOP moves to “Up Next”", p.enabled) { p.enabled = it })
+        workout.addView(divider())
+        workout.addView(toggle("Sound when rest ends", "Plays in your headphones, even on vibrate", p.soundEnabled) {
+            p.soundEnabled = it
+            if (it) RestTimer.previewChime(this)
+        })
+        workout.addView(divider())
+        workout.addView(toggle("Stop if I start early", "Cancel the countdown when the next set starts", p.cancelOnExercise) { p.cancelOnExercise = it })
+
         val setup = section(col, "SETUP")
         status = body("").also { setup.addView(it) }
         // Restricted settings only block sideloaded installs, not Play installs
@@ -153,6 +165,32 @@ class SettingsActivity : Activity() {
 
     private fun body(t: String) = TextView(this).apply {
         text = t; textSize = 14f; setTextColor(getColor(R.color.text)); setPadding(0, 0, 0, px(6))
+    }
+
+    /** Title + subtitle + switch; the whole row toggles. */
+    private fun toggle(title: String, subtitle: String, initial: Boolean, onChange: (Boolean) -> Unit): View {
+        val sw = Switch(this).apply { isChecked = initial; setOnCheckedChangeListener { _, c -> onChange(c) } }
+        return LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = px(64)
+            setPadding(0, px(6), 0, px(6))
+            addView(LinearLayout(this@SettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@SettingsActivity).apply {
+                    text = title; textSize = 15f; setTypeface(typeface, Typeface.BOLD); setTextColor(getColor(R.color.text))
+                })
+                addView(TextView(this@SettingsActivity).apply {
+                    text = subtitle; textSize = 13f; setTextColor(getColor(R.color.text_dim)); setPadding(0, px(2), px(8), 0)
+                })
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(sw)
+            setOnClickListener { sw.toggle() }
+        }
+    }
+
+    private fun divider() = View(this).apply {
+        setBackgroundColor(getColor(R.color.card_stroke))
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, px(1))
     }
 
     private fun row(label: String, value: String) = LinearLayout(this).apply {

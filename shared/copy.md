@@ -7,12 +7,17 @@ Shared wording for both apps and the store listings. Keep the two apps in sync. 
 - Tagline: *Finish your set. Rest starts itself.* (Android) / *Your rest, one tap away.* (iOS, manual start — see ios/HANDOVER.md)
 
 ## Main screen
-- Header: `WELLREST`
-- Ring label: `REST`
-- Controls: `−15`, `+15`; presets `30s`, `45s`, `1:00`, `1:30`, `2:00`
-- Toggle (Android only): **Auto-start after each set** — *Rings once when the rest is over*
-- Toggle: **Sound when rest ends** — *Plays in your headphones, even on vibrate* (chime on the media stream, music ducks briefly; on by default)
-- Toggle: **Stop if I start early** — *Cancel the countdown when the next set starts* (Android only; no set detection on iOS)
+- Header: `WELLREST` + settings gear
+- Status pill: `Connected to WHOOP` / `Reconnecting to WHOOP…` / `Not connected — tap to fix` / `Setup needed — tap to fix`
+- Crown dial: turn the ring to set the rest (one turn = 60 s, detent every 5 s, firmer click each minute, bump at 15 s / 10 min)
+- Dial centre: `REST` + `m:ss` + **START** button → while running: `RESTING` + countdown + **STOP**
+- Hint under the dial: *Turn the ring to set your rest* / *Rest in progress*
+- Presets: `30s`, `45s`, `1:00`, `1:30`, `2:00`
+
+## Settings → Workout
+- **Auto-start after each set** — *Starts the rest when WHOOP moves to “Up Next”* (Android only)
+- **Sound when rest ends** — *Plays in your headphones, even on vibrate* (chime on the media stream, music ducks briefly; on by default)
+- **Stop if I start early** — *Cancel the countdown when the next set starts* (Android only)
 
 ## Rest card (Android notification / iOS Live Activity)
 - Label: `Rest`

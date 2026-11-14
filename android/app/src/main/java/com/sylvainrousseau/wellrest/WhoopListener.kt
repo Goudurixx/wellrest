@@ -40,7 +40,7 @@ class WhoopListener : NotificationListenerService() {
         connected = true
         val pkg = Prefs(this).pkg
         val active = runCatching { activeNotifications.toList() }.getOrDefault(emptyList())
-        LogStore.add("listener connected — ${active.count { it.packageName == pkg }} WHOOP notification(s) active")
+        LogStore.add("listener connected — ${active.count { it.packageName == pkg }} WHOOP notification(s) active · ${powerState()}")
         active.filter { it.packageName == pkg }.forEach { onNotificationPosted(it) }
     }
 
@@ -85,10 +85,15 @@ class WhoopListener : NotificationListenerService() {
                     LogStore.add("   ignored: set lasted only ${prevDuration / 1000.0}s")
                 } else {
                     val next = nextExercise(read.visible, rx)
-                    LogStore.add("→ REST (${p.restSeconds}s)${next?.let { ", next: $it" } ?: ""}")
-                    RestTimer.start(this, p.restSeconds, next)
+                    val elapsed = whoopRestElapsedMs(read.visible, sbn)
+                    LogStore.add("→ REST (${p.restSeconds}s)${next?.let { ", next: $it" } ?: ""}" +
+                        (if (elapsed > 0) ", WHOOP rest clock already at ${elapsed / 1000}s" else "") + " · ${powerState()}")
+                    RestTimer.start(this, p.restSeconds, next, elapsed)
                 }
             }
+            // Still resting: keep our countdown aligned with WHOOP's own rest clock
+            nowResting && was == true && RestTimer.isRunning ->
+                RestTimer.syncElapsed(this, whoopRestElapsedMs(read.visible, sbn))
             !nowResting && was == true && p.cancelOnExercise && RestTimer.isRunning -> {
                 LogStore.add("→ SET started, timer cancelled")
                 RestTimer.stop(this)
@@ -103,6 +108,25 @@ class WhoopListener : NotificationListenerService() {
         // through that. If it stays gone, the workout ended: forget the state.
         handler.removeCallbacks(resetState)
         handler.postDelayed(resetState, 5_000)
+    }
+
+    /**
+     * WHOOP's "Up Next" card shows how long the rest has been going (00:06, 00:07, …).
+     * Add the notification's delivery delay so a late delivery doesn't shift our countdown.
+     */
+    private fun whoopRestElapsedMs(parts: List<String>, sbn: StatusBarNotification): Long {
+        val clock = parts.firstNotNullOfOrNull { CLOCK.matchEntire(it.trim()) } ?: return 0
+        val shown = (clock.groupValues[1].toLong() * 60 + clock.groupValues[2].toLong()) * 1000
+        val delay = (System.currentTimeMillis() - sbn.postTime).coerceIn(0, 60_000)
+        if (delay > 2000) LogStore.add("   WHOOP update delivered ${delay / 1000.0}s late")
+        return shown + delay
+    }
+
+    private fun powerState(): String {
+        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        val saver = if (pm.isPowerSaveMode) "power saving ON" else "power saving off"
+        val opt = if (pm.isIgnoringBatteryOptimizations(packageName)) "battery unrestricted" else "battery optimised"
+        return "$saver, $opt"
     }
 
     /** "Up Next:" | "Bench Press - Dumbbell" → "Bench Press - Dumbbell" */
@@ -154,5 +178,6 @@ class WhoopListener : NotificationListenerService() {
         /** UI hook (main screen status pill). Called on the main thread. */
         @Volatile var onConnectionChanged: (() -> Unit)? = null
         private const val MIN_SET_MS = 2_000L
+        private val CLOCK = Regex("(\\d{1,2}):(\\d{2})")
     }
 }
