@@ -11,7 +11,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.media.RingtoneManager
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -194,25 +195,14 @@ object RestTimer {
     }
 
     /** One short sound on the ALARM stream (audible on silent/vibrate) + double buzz. */
+    /**
+     * End of rest: WellRest's own chime + double buzz.
+     * The chime uses the MEDIA stream: it plays even in vibrate/silent mode, goes to headphones
+     * when they're connected (phone speaker otherwise, at media volume), and briefly ducks the
+     * user's music instead of pausing it.
+     */
     private fun ring(ctx: Context) {
-        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        runCatching {
-            MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                setDataSource(ctx, uri)
-                isLooping = false
-                setOnCompletionListener { it.release() }
-                setOnErrorListener { mp, _, _ -> mp.release(); true }
-                prepare()
-                start()
-            }
-        }.onFailure { LogStore.add("sound failed: ${it.message}") }
+        if (Prefs(ctx).soundEnabled) playChime(ctx)
 
         @Suppress("DEPRECATION")
         val vib: Vibrator = if (Build.VERSION.SDK_INT >= 31)
@@ -220,6 +210,37 @@ object RestTimer {
         else ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 150, 400), -1))
     }
+
+    private fun playChime(ctx: Context) {
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(attrs)
+            .build()
+        runCatching {
+            am.requestAudioFocus(focus)
+            val afd = ctx.resources.openRawResourceFd(R.raw.rest_done)
+            MediaPlayer().apply {
+                setAudioAttributes(attrs)
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                afd.close()
+                setOnCompletionListener { it.release(); am.abandonAudioFocusRequest(focus) }
+                setOnErrorListener { mp, _, _ -> mp.release(); am.abandonAudioFocusRequest(focus); true }
+                prepare()
+                start()
+            }
+            if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) LogStore.add("chime played but media volume is 0")
+        }.onFailure {
+            am.abandonAudioFocusRequest(focus)
+            LogStore.add("sound failed: ${it.message}")
+        }
+    }
+
+    /** Preview from the main screen toggle. */
+    fun previewChime(ctx: Context) = playChime(ctx.applicationContext)
 
     private fun ensureChannel(ctx: Context) {
         nm(ctx).createNotificationChannel(

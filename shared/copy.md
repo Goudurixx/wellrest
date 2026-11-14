@@ -11,6 +11,7 @@ Shared wording for both apps and the store listings. Keep the two apps in sync. 
 - Ring label: `REST`
 - Controls: `−15`, `+15`; presets `30s`, `45s`, `1:00`, `1:30`, `2:00`
 - Toggle (Android only): **Auto-start after each set** — *Rings once when the rest is over*
+- Toggle: **Sound when rest ends** — *Plays in your headphones, even on vibrate* (chime on the media stream, music ducks briefly; on by default)
 - Toggle: **Stop if I start early** — *Cancel the countdown when the next set starts* (Android only; no set detection on iOS)
 
 ## Rest card (Android notification / iOS Live Activity)

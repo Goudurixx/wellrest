@@ -55,6 +55,10 @@ class MainActivity : Activity() {
         buildPresets()
 
         bindSwitch(R.id.swAuto, R.id.rowAuto, prefs.enabled) { prefs.enabled = it }
+        bindSwitch(R.id.swSound, R.id.rowSound, prefs.soundEnabled) {
+            prefs.soundEnabled = it
+            if (it) RestTimer.previewChime(this)   // let the user hear it straight away
+        }
         bindSwitch(R.id.swCancel, R.id.rowCancel, prefs.cancelOnExercise) { prefs.cancelOnExercise = it }
 
         render()

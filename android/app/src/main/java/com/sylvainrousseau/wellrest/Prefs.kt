@@ -28,6 +28,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("enabled", true)
         set(v) = sp.edit().putBoolean("enabled", v).apply()
 
+    /** Play a chime (media stream, headphones-friendly) when the rest ends. */
+    var soundEnabled: Boolean
+        get() = sp.getBoolean("sound", true)
+        set(v) = sp.edit().putBoolean("sound", v).apply()
+
     /** User has seen and accepted the notification-access disclosure. */
     var disclosureAccepted: Boolean
         get() = sp.getBoolean("disclosure", false)
