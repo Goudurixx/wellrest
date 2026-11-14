@@ -43,8 +43,11 @@ class MainActivity : Activity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<View>(R.id.status).setOnClickListener {
-            if (hasAccess()) startActivity(Intent(this, SettingsActivity::class.java))
-            else AppInfo.requestNotificationAccess(this)
+            when {
+                !hasAccess() -> AppInfo.requestNotificationAccess(this)
+                !WhoopListener.connected -> showReconnectHelp()
+                else -> startActivity(Intent(this, SettingsActivity::class.java))
+            }
         }
         findViewById<View>(R.id.minus).setOnClickListener { it.tick(); setRest(prefs.restSeconds - 15) }
         findViewById<View>(R.id.plus).setOnClickListener { it.tick(); setRest(prefs.restSeconds + 15) }
@@ -66,19 +69,77 @@ class MainActivity : Activity() {
             disclosureShownThisSession = true
             AppInfo.requestNotificationAccess(this)
         }
+        renderStatus()
+        // Listener unbound while access is granted: ask nicely, then force it
+        if (granted && !WhoopListener.connected) {
+            reconnecting = true
+            renderStatus()
+            ListenerHealth.requestRebind(this)
+            ui.postDelayed({
+                if (!WhoopListener.connected) ListenerHealth.forceRebind(this)
+                ui.postDelayed({ reconnecting = false; renderStatus() }, 2500)
+            }, 1200)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        WhoopListener.onConnectionChanged = { ui.post { if (WhoopListener.connected) reconnecting = false; renderStatus() } }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        WhoopListener.onConnectionChanged = null
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ui.removeCallbacksAndMessages(null)
+        reconnecting = false
+    }
+
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private var reconnecting = false
+
+    private fun renderStatus() {
         val (color, text) = when {
-            !granted -> R.color.red to "Setup needed — tap to fix"
-            !WhoopListener.connected -> R.color.amber to "Waiting for WHOOP connection…"
-            else -> R.color.green to "Connected to WHOOP"
+            !hasAccess() -> R.color.red to "Setup needed — tap to fix"
+            WhoopListener.connected -> R.color.green to "Connected to WHOOP"
+            reconnecting -> R.color.amber to "Reconnecting to WHOOP…"
+            else -> R.color.amber to "Not connected — tap to fix"
         }
         statusDot.backgroundTintList = ColorStateList.valueOf(getColor(color))
         statusText.text = text
-        if (granted) NotificationListenerService.requestRebind(ComponentName(this, WhoopListener::class.java))
+    }
+
+    private fun showReconnectHelp() = AppInfo.sheet(
+        this,
+        icon = R.drawable.ic_bell,
+        title = "Reconnect to WHOOP",
+        body = "Android has paused WellRest's access to notifications, usually to save battery.",
+        points = listOf(
+            "Tap Reconnect below.",
+            "If it happens again: Settings → Apps → WellRest → Battery → Unrestricted.",
+            "Samsung: also remove WellRest from Sleeping apps in Battery settings.",
+        ),
+        primary = "Reconnect",
+        secondary = "Battery settings",
+        onSecondary = {
+            startActivity(
+                Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(android.net.Uri.parse("package:$packageName"))
+            )
+        },
+    ) {
+        reconnecting = true
+        renderStatus()
+        ListenerHealth.forceRebind(this)
+        ui.postDelayed({ reconnecting = false; renderStatus() }, 2500)
     }
 
     private var disclosureShownThisSession = false
 
-    private fun hasAccess() = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+    private fun hasAccess() = ListenerHealth.hasAccess(this)
 
     private fun setRest(seconds: Int) {
         prefs.restSeconds = seconds

@@ -46,7 +46,8 @@ class WhoopListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         connected = false
-        LogStore.add("listener disconnected")
+        LogStore.add("listener disconnected, asking Android to rebind")
+        ListenerHealth.requestRebind(this)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -149,6 +150,9 @@ class WhoopListener : NotificationListenerService() {
 
     companion object {
         @Volatile var connected = false
+            set(v) { field = v; onConnectionChanged?.invoke() }
+        /** UI hook (main screen status pill). Called on the main thread. */
+        @Volatile var onConnectionChanged: (() -> Unit)? = null
         private const val MIN_SET_MS = 2_000L
     }
 }

@@ -104,6 +104,7 @@ object AppInfo {
         hint: String? = null,
         primary: String,
         secondary: String? = null,
+        onSecondary: () -> Unit = {},
         onPrimary: () -> Unit = {},
     ) {
         val d = Dialog(activity)
@@ -139,7 +140,7 @@ object AppInfo {
             setOnClickListener { d.dismiss(); onPrimary() }
         }
         d.findViewById<TextView>(R.id.secondary).apply {
-            if (secondary != null) { text = secondary; visibility = View.VISIBLE; setOnClickListener { d.dismiss() } }
+            if (secondary != null) { text = secondary; visibility = View.VISIBLE; setOnClickListener { d.dismiss(); onSecondary() } }
         }
 
         // Keep long content scrollable inside a sheet that never exceeds ~70% of the screen
