@@ -13,6 +13,8 @@ Finish a set, and the countdown starts on its own. When rest is over, it rings o
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-16EC9F?logo=android&logoColor=white)
 ![iOS 26 — in progress](https://img.shields.io/badge/iOS%2026-in%20progress-8A939C?logo=apple&logoColor=white)
 
+<img src="docs/images/demo.gif" width="300" alt="WellRest rest dial counting down from 1:00 after tapping Start" />
+
 </div>
 
 ---
@@ -30,7 +32,7 @@ Finish a set, and the countdown starts on its own. When rest is over, it rings o
 
 | Rest countdown, next to WHOOP's own card | App |
 |:---:|:---:|
-| <img src="docs/images/notification.png" width="420" alt="WellRest rest countdown above the WHOOP workout notification" /> | <img src="docs/images/main.png" width="260" alt="WellRest main screen" /> |
+| <img src="docs/images/notification.png" width="420" alt="WellRest rest countdown above the WHOOP workout notification" /> | <img src="docs/images/main.png" width="260" alt="WellRest rest dial with presets" /> |
 
 ## Why
 
@@ -43,7 +45,7 @@ starts a rest countdown the moment a set ends, and alerts you when it's time for
 - **Hands-free** — starts automatically when WHOOP switches from a set to “Up Next”
 - **Shows what's next** — the next exercise and a live countdown, in a card styled to match WHOOP's
 - **Rings once, even on silent** — a single alert on the alarm stream, plus a double buzz
-- **Adjustable rest** — 15 s to 10 min, ±15 s steps and 30 s / 45 s / 1:00 / 1:30 / 2:00 presets
+- **Adjustable rest** — turn the crown dial from 15 s to 10 min, or tap a 30 s / 45 s / 1:00 / 1:30 / 2:00 preset
 - **Smart cancel** — stops by itself if you start the next set early
 - **Private by design** — no internet permission, no account, no analytics; everything stays on the phone
 
