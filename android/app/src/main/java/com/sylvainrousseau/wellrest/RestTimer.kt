@@ -49,6 +49,9 @@ object RestTimer {
     @Volatile var startedByWhoop = false
         private set
 
+    /** When the current rest began (elapsedRealtime). */
+    private var startedAt = 0L
+
     /** Largest correction ever taken from WHOOP's rest clock. */
     private const val MAX_SYNC_MS = 10_000L
 
@@ -89,6 +92,7 @@ object RestTimer {
         ensureChannel(app)
         handler.removeCallbacks(tick)
         startedByWhoop = fromWhoop
+        startedAt = SystemClock.elapsedRealtime() - alreadyElapsedMs
 
         generation++
         totalMs = seconds * 1000L
@@ -127,6 +131,8 @@ object RestTimer {
     fun syncElapsed(ctx: Context, elapsedMs: Long) {
         // Only rests WHOOP started; a rest the user started with START is theirs
         if (!isRunning || !startedByWhoop) return
+        // A clock longer than our rest so far still belongs to the previous set: ignore it
+        if (elapsedMs > SystemClock.elapsedRealtime() - startedAt + 3000) return
         val wantedEnd = SystemClock.elapsedRealtime() + totalMs - elapsedMs
         val drift = wantedEnd - endElapsed
         if (kotlin.math.abs(drift) < 1500) return

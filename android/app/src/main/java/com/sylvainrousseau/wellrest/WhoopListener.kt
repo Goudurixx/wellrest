@@ -99,16 +99,17 @@ class WhoopListener : NotificationListenerService() {
                     LogStore.add("   ignored: set lasted only ${prevDuration / 1000.0}s")
                 } else {
                     val next = nextExercise(read.visible, rx)
-                    val elapsed = whoopRestElapsedMs(read.visible, sbn)
+                    // WHOOP's clock in this first "Up Next" update still shows the set that just
+                    // ended (it resets to 00:00 on the next update), so only the delivery delay counts.
+                    val elapsed = deliveryDelayMs(sbn).coerceAtMost(10_000)
                     LogStore.add("→ REST (${p.restSeconds}s)${next?.let { ", next: $it" } ?: ""}" +
-                        (if (elapsed > 0) ", WHOOP rest clock already at ${elapsed / 1000}s" else "") + " · ${powerState()}")
-                    if (elapsed > 10_000) LogStore.add("   WHOOP clock looks stale (${elapsed / 1000}s), starting the full rest")
-                    RestTimer.start(this, p.restSeconds, next, if (elapsed > 10_000) 0 else elapsed, fromWhoop = true)
+                        (if (elapsed > 1000) ", card arrived ${elapsed / 1000}s late" else "") + " · ${powerState()}")
+                    RestTimer.start(this, p.restSeconds, next, elapsed, fromWhoop = true)
                 }
             }
             // Still resting: keep our countdown aligned with WHOOP's own rest clock
             nowResting && was == true && RestTimer.isRunning ->
-                RestTimer.syncElapsed(this, whoopRestElapsedMs(read.visible, sbn))
+                whoopClockMs(read.visible)?.let { RestTimer.syncElapsed(this, it + deliveryDelayMs(sbn)) }
             !nowResting && was == true && p.cancelOnExercise && RestTimer.isRunning -> {
                 LogStore.add("→ SET started, timer cancelled")
                 RestTimer.stop(this)
@@ -131,12 +132,16 @@ class WhoopListener : NotificationListenerService() {
      * WHOOP's "Up Next" card shows how long the rest has been going (00:06, 00:07, …).
      * Add the notification's delivery delay so a late delivery doesn't shift our countdown.
      */
-    private fun whoopRestElapsedMs(parts: List<String>, sbn: StatusBarNotification): Long {
-        val clock = parts.firstNotNullOfOrNull { CLOCK.matchEntire(it.trim()) } ?: return 0
-        val shown = (clock.groupValues[1].toLong() * 60 + clock.groupValues[2].toLong()) * 1000
+    private fun whoopClockMs(parts: List<String>): Long? {
+        val clock = parts.firstNotNullOfOrNull { CLOCK.matchEntire(it.trim()) } ?: return null
+        return (clock.groupValues[1].toLong() * 60 + clock.groupValues[2].toLong()) * 1000
+    }
+
+    /** How long ago WHOOP posted this update (Samsung power saving can hold updates back). */
+    private fun deliveryDelayMs(sbn: StatusBarNotification): Long {
         val delay = (System.currentTimeMillis() - sbn.postTime).coerceIn(0, 60_000)
         if (delay > 2000) LogStore.add("   WHOOP update delivered ${delay / 1000.0}s late")
-        return shown + delay
+        return delay
     }
 
     private fun powerState(): String {
