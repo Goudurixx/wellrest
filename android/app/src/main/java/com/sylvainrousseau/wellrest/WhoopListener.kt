@@ -29,6 +29,9 @@ class WhoopListener : NotificationListenerService() {
     /** When the current state began (elapsedRealtime). */
     private var stateSince = 0L
     private var lastSummary: String? = null
+    private var lastIgnored: String? = null
+    /** Notification key of WHOOP's live workout card. */
+    private var workoutKey: String? = null
 
     private val resetState = Runnable {
         resting = null
@@ -53,10 +56,21 @@ class WhoopListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val p = Prefs(this)
         if (sbn.packageName != p.pkg) return
-        handler.removeCallbacks(resetState) // card is back: not the end of the workout
 
         val read = readCard(sbn.notification)
         val text = read.visible.joinToString(" | ")
+
+        // Only WHOOP's live workout card counts: it's the one with a custom layout.
+        // WHOOP also posts "Workout in Progress", "Day in Review", recovery tips… during a
+        // workout; treating those as the card flipped the state to SET and cancelled rests.
+        val isWorkoutCard = read.source != "fields"
+        if (!isWorkoutCard) {
+            val brief = text.ifEmpty { read.extras }.take(60)
+            if (lastIgnored != brief) { lastIgnored = brief; LogStore.add("ignored other WHOOP notification: $brief") }
+            return
+        }
+        workoutKey = sbn.key
+        handler.removeCallbacks(resetState) // card is back: not the end of the workout
 
         // Log only structural changes (ignore ticking clock / heart rate)
         val summary = (text + read.extras).replace(Regex("\\d+"), "#")
@@ -104,7 +118,9 @@ class WhoopListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (sbn.packageName != Prefs(this).pkg) return
-        LogStore.add("WHOOP notification removed")
+        // Only the workout card's removal can mean the workout ended
+        if (sbn.key != workoutKey) return
+        LogStore.add("WHOOP workout card removed")
         // WHOOP sometimes removes and immediately re-posts its card mid-rest: keep the state
         // through that. If it stays gone, the workout ended: forget the state.
         handler.removeCallbacks(resetState)
