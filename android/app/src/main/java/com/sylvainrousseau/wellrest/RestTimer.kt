@@ -45,6 +45,13 @@ object RestTimer {
     private var endElapsed = 0L
     private var totalMs = 0L
 
+    /** True when the current rest was started from WHOOP's notification (not the START button). */
+    @Volatile var startedByWhoop = false
+        private set
+
+    /** Largest correction ever taken from WHOOP's rest clock. */
+    private const val MAX_SYNC_MS = 10_000L
+
     /** UI hook: called on the main thread whenever a rest starts or ends. */
     @Volatile var onStateChanged: (() -> Unit)? = null
     val remainingMs: Long get() = if (isRunning) (endElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0) else 0
@@ -77,14 +84,16 @@ object RestTimer {
      * @param alreadyElapsedMs how long the rest has already been going (from WHOOP's own rest
      *   clock), so the countdown lines up with WHOOP even if its notification arrived late.
      */
-    fun start(ctx: Context, seconds: Int, next: String? = null, alreadyElapsedMs: Long = 0) {
+    fun start(ctx: Context, seconds: Int, next: String? = null, alreadyElapsedMs: Long = 0, fromWhoop: Boolean = false) {
         val app = ctx.applicationContext
         ensureChannel(app)
         handler.removeCallbacks(tick)
+        startedByWhoop = fromWhoop
 
         generation++
         totalMs = seconds * 1000L
-        endElapsed = SystemClock.elapsedRealtime() + totalMs - alreadyElapsedMs.coerceIn(0, totalMs)
+        // WHOOP's clock only nudges the start; it can never eat the rest (stale cards under power saving)
+        endElapsed = SystemClock.elapsedRealtime() + totalMs - alreadyElapsedMs.coerceIn(0, minOf(MAX_SYNC_MS, totalMs / 2))
         nextName = next?.takeIf { it.isNotBlank() }
         isRunning = true
 
@@ -116,10 +125,18 @@ object RestTimer {
      * a drift over 1.5 s (late or batched notification delivery) is corrected.
      */
     fun syncElapsed(ctx: Context, elapsedMs: Long) {
-        if (!isRunning) return
+        // Only rests WHOOP started; a rest the user started with START is theirs
+        if (!isRunning || !startedByWhoop) return
         val wantedEnd = SystemClock.elapsedRealtime() + totalMs - elapsedMs
         val drift = wantedEnd - endElapsed
         if (kotlin.math.abs(drift) < 1500) return
+        if (kotlin.math.abs(drift) > MAX_SYNC_MS) {
+            LogStore.add("ignored WHOOP clock (${drift / 1000}s off, looks stale)")
+            return
+        }
+        // never let a correction end the rest on the spot
+        val now = SystemClock.elapsedRealtime()
+        if (wantedEnd - now < 1000) return
         endElapsed = wantedEnd
         LogStore.add("resynced with WHOOP (${if (drift > 0) "+" else ""}${drift / 1000.0}s)")
         handler.removeCallbacks(tick)

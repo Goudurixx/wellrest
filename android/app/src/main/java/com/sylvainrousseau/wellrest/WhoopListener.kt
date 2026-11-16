@@ -88,7 +88,8 @@ class WhoopListener : NotificationListenerService() {
                     val elapsed = whoopRestElapsedMs(read.visible, sbn)
                     LogStore.add("→ REST (${p.restSeconds}s)${next?.let { ", next: $it" } ?: ""}" +
                         (if (elapsed > 0) ", WHOOP rest clock already at ${elapsed / 1000}s" else "") + " · ${powerState()}")
-                    RestTimer.start(this, p.restSeconds, next, elapsed)
+                    if (elapsed > 10_000) LogStore.add("   WHOOP clock looks stale (${elapsed / 1000}s), starting the full rest")
+                    RestTimer.start(this, p.restSeconds, next, if (elapsed > 10_000) 0 else elapsed, fromWhoop = true)
                 }
             }
             // Still resting: keep our countdown aligned with WHOOP's own rest clock

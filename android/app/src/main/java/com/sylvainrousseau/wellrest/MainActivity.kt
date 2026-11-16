@@ -113,7 +113,14 @@ class MainActivity : Activity() {
     private fun renderRunning() {
         val running = RestTimer.isRunning
         dial.running = running
-        hint.text = if (running) "Rest in progress" else "Turn the ring to set your rest"
+        val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        val silent = prefs.soundEnabled && am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0
+        hint.text = when {
+            silent -> "Media volume is off: the end-of-rest chime will be silent"
+            running -> "Rest in progress"
+            else -> "Turn the ring to set your rest"
+        }
+        hint.setTextColor(getColor(if (silent) R.color.amber else R.color.text_dim))
         presetRow.alpha = if (running) 0.35f else 1f
         for (i in 0 until presetRow.childCount) presetRow.getChildAt(i).isEnabled = !running
     }
