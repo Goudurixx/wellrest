@@ -24,15 +24,19 @@
 **Health apps declaration:** fitness utility, no health data collected.
 
 **Foreground service — type `specialUse`** (required, with a video):
-- Description: "When the user finishes a set in their WHOOP strength workout, the app runs a
-  user-visible rest countdown (default 60 s, max 10 min) in an ongoing notification with a Skip
-  button, then plays one alert sound. The service stops as soon as the countdown ends or is skipped."
-- Impact if deferred/interrupted: "The rest countdown would freeze or disappear and the user would
-  not be alerted when their rest period is over, which is the core purpose of the app."
-- Why no other type fits: not media playback, location, health-sensor or data sync; the countdown
-  can last longer than the 3-minute `shortService` limit.
-- Video (≤ 1 min, screen recording): open the app → start a WHOOP workout → finish a set → rest
-  notification appears and counts down → it rings → Skip button stops it.
+- Description: "While a WHOOP strength workout is in progress (detected from the WHOOP app's
+  ongoing workout notification), WellRest shows one user-visible notification: 'Ready' between
+  sets, and a live rest countdown with a Skip button after each set, ending with one alert sound.
+  It also offers buttons to start a rest or open the WHOOP app. The service stops as soon as the
+  WHOOP workout notification disappears, or when a rest started outside a workout ends."
+- Impact if deferred/interrupted: "The rest countdown would not start when a set ends, would
+  freeze or disappear, and the user would not be alerted when their rest is over, which is the
+  core purpose of the app."
+- Why no other type fits: not media playback, location, health-sensor or data sync; a workout
+  lasts far longer than the 3-minute `shortService` limit.
+- Video (≤ 1 min, screen recording): start a WHOOP strength workout → WellRest 'Ready'
+  notification appears → finish a set → it becomes the rest countdown → it rings → back to
+  'Ready' → end the WHOOP workout → the notification disappears.
 
 ## Notification access
 There is no Play declaration form for NotificationListenerService, but the User Data policy requires

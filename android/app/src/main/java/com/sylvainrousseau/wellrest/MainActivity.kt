@@ -38,6 +38,13 @@ class MainActivity : Activity() {
         statusText = findViewById(R.id.statusText)
         haptics = Haptics(dial)
 
+        findViewById<View>(R.id.openWhoop).apply {
+            visibility = if (Whoop.isInstalled(this@MainActivity)) View.VISIBLE else View.GONE
+            setOnClickListener { haptics.detent(); Whoop.open(this@MainActivity) }
+        }
+        publishShortcuts()
+        handleShortcut(intent)
+
         findViewById<View>(R.id.settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -51,7 +58,7 @@ class MainActivity : Activity() {
 
         dial.setValue(prefs.restSeconds, animate = false)
         dial.onValueChanged = { s, final ->
-            if (final) prefs.restSeconds = s
+            if (final) { prefs.restSeconds = s; RestTimer.refresh(this) }
             renderPresets(s)
         }
         dial.onStartStop = {
@@ -161,6 +168,38 @@ class MainActivity : Activity() {
         ui.postDelayed({ reconnecting = false; renderStatus() }, 2500)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShortcut(intent)
+    }
+
+    /** Long-press the app icon: "Start rest" and "Open WHOOP". */
+    private fun publishShortcuts() {
+        val list = mutableListOf(
+            androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "start_rest")
+                .setShortLabel("Start rest")
+                .setLongLabel("Start a rest now")
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.drawable.ic_shortcut_start))
+                .setIntent(Intent(this, MainActivity::class.java).setAction(ACTION_START_REST))
+                .build()
+        )
+        Whoop.launchIntent(this)?.let { whoop ->
+            list += androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "open_whoop")
+                .setShortLabel("Open WHOOP")
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.drawable.ic_shortcut_open))
+                .setIntent(whoop.setAction(Intent.ACTION_MAIN))
+                .build()
+        }
+        runCatching { androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, list) }
+    }
+
+    private fun handleShortcut(i: Intent?) {
+        if (i?.action == ACTION_START_REST) {
+            i.action = null
+            if (!RestTimer.isRunning) RestTimer.start(this, prefs.restSeconds)
+        }
+    }
+
     private var disclosureShownThisSession = false
 
     private fun hasAccess() = ListenerHealth.hasAccess(this)
@@ -186,6 +225,7 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     if (s / 60 != prefs.restSeconds / 60) haptics.minute() else haptics.detent()
                     prefs.restSeconds = s
+                    RestTimer.refresh(this@MainActivity)
                     dial.setValue(s)           // knob glides to the preset
                     renderPresets(s)
                 }
@@ -197,6 +237,8 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        const val ACTION_START_REST = "com.sylvainrousseau.wellrest.START_REST"
+
         /** Edge-to-edge: pad content away from the status / navigation bars. */
         fun applyInsets(activity: Activity, root: View) {
             WindowCompat.setDecorFitsSystemWindows(activity.window, false)

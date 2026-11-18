@@ -55,6 +55,26 @@ object RestTimer {
     /** Largest correction ever taken from WHOOP's rest clock. */
     private const val MAX_SYNC_MS = 10_000L
 
+    /**
+     * True while WHOOP's workout card is on screen. The WellRest notification then stays up for
+     * the whole workout: "Ready" between rests, the countdown during a rest.
+     */
+    @Volatile var workoutActive = false
+        private set
+
+    fun setWorkoutActive(ctx: Context, active: Boolean) {
+        if (workoutActive == active) return
+        workoutActive = active
+        val app = ctx.applicationContext
+        LogStore.add(if (active) "workout detected: Ready notification on" else "workout over: Ready notification off")
+        if (active) { ensureChannel(app); ensureService(app) }
+        else if (!isRunning) release(app)
+        handler.post { onStateChanged?.invoke() }
+    }
+
+    /** Re-draw the notification (e.g. the rest length changed). */
+    fun refresh(ctx: Context) = notifyNow(ctx.applicationContext)
+
     /** UI hook: called on the main thread whenever a rest starts or ends. */
     @Volatile var onStateChanged: (() -> Unit)? = null
     val remainingMs: Long get() = if (isRunning) (endElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0) else 0
@@ -106,18 +126,7 @@ object RestTimer {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WellRest:rest")
             .apply { acquire(totalMs + 10_000) }
 
-        when (svc) {
-            // Service already holds the card: just refresh it with the new countdown
-            Svc.FOREGROUND, Svc.PENDING -> notifyNow(app)
-            Svc.NONE -> try {
-                svc = Svc.PENDING
-                app.startForegroundService(Intent(app, RestService::class.java))
-            } catch (t: Throwable) {
-                svc = Svc.NONE
-                LogStore.add("foreground service refused (${t.javaClass.simpleName}), using plain notification")
-                notifyNow(app)
-            }
-        }
+        ensureService(app)
         tick.ctx = app
         handler.post(tick)
     }
@@ -170,22 +179,90 @@ object RestTimer {
     private fun cancelInternal(ctx: Context) {
         handler.removeCallbacks(tick)
         isRunning = false
+        wakeLock?.takeIf { it.isHeld }?.release()
+        wakeLock = null
+        // Workout still on: the same notification goes back to "Ready"
+        if (workoutActive) notifyNow(ctx) else release(ctx)
+    }
+
+    /** Show the notification through the foreground service (colorized), or plainly if refused. */
+    private fun ensureService(app: Context) {
+        when (svc) {
+            Svc.FOREGROUND, Svc.PENDING -> notifyNow(app)
+            Svc.NONE -> try {
+                svc = Svc.PENDING
+                app.startForegroundService(Intent(app, RestService::class.java))
+            } catch (t: Throwable) {
+                svc = Svc.NONE
+                LogStore.add("foreground service refused (${t.javaClass.simpleName}), using plain notification")
+                notifyNow(app)
+            }
+        }
+    }
+
+    /** Nothing left to show: stop the service and remove the notification. */
+    private fun release(ctx: Context) {
         // Only stop the service once it is in the foreground; a PENDING one stops itself
         if (svc == Svc.FOREGROUND) {
             ctx.stopService(Intent(ctx, RestService::class.java))
             svc = Svc.NONE
         }
         nm(ctx).cancel(NOTIF_ID)
-        wakeLock?.takeIf { it.isHeld }?.release()
-        wakeLock = null
     }
 
+    val hasSomethingToShow get() = isRunning || workoutActive
+
     private fun notifyNow(ctx: Context) {
-        if (!isRunning) return
+        if (!hasSomethingToShow) return
         runCatching { nm(ctx).notify(NOTIF_ID, build(ctx)) }
     }
 
-    fun build(ctx: Context): Notification {
+    fun build(ctx: Context): Notification = if (isRunning) buildRest(ctx) else buildReady(ctx)
+
+    private fun openAppPi(ctx: Context) = PendingIntent.getActivity(
+        ctx, 1, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    /** Between rests: WellRest is watching the workout. */
+    private fun buildReady(ctx: Context): Notification {
+        val secs = Prefs(ctx).restSeconds
+        val auto = Prefs(ctx).enabled
+        val detail = if (auto) "Rest ${fmt(secs * 1000L)} starts when your set ends" else "Auto-start is off · tap ▶ to rest ${fmt(secs * 1000L)}"
+        val startPi = PendingIntent.getBroadcast(
+            ctx, 7, Intent(ctx, StartReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val whoopPi = Whoop.openPendingIntent(ctx)
+        val views = RemoteViews(ctx.packageName, R.layout.notif_ready).apply {
+            setTextViewText(R.id.detail, detail)
+            setOnClickPendingIntent(R.id.startRest, startPi)
+            if (whoopPi != null) setOnClickPendingIntent(R.id.openWhoop, whoopPi)
+            else setViewVisibility(R.id.openWhoop, android.view.View.GONE)
+            if (!foreground) setInt(R.id.root, "setBackgroundResource", R.drawable.bg_notif)
+            if (!foreground) setViewPadding(R.id.root, 24, 16, 24, 16)
+        }
+        return NotificationCompat.Builder(ctx, CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("Ready")
+            .setContentText(detail)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(views)
+            .setCustomBigContentView(views)
+            .setColor(CARD_COLOR)
+            .setColorized(true)
+            .setContentIntent(openAppPi(ctx))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
+    }
+
+    private fun buildRest(ctx: Context): Notification {
         val now = SystemClock.elapsedRealtime()
         val left = (endElapsed - now).coerceAtLeast(0)
         val progress = if (totalMs > 0) (left * 1000 / totalMs).toInt() else 0
@@ -198,10 +275,8 @@ object RestTimer {
             ctx, generation, Intent(ctx, StopReceiver::class.java).putExtra(StopReceiver.EXTRA_GEN, generation),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val openPi = PendingIntent.getActivity(
-            ctx, 1, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val openPi = openAppPi(ctx)
+        val whoopPi = Whoop.openPendingIntent(ctx)
 
         fun views(layout: Int) = RemoteViews(ctx.packageName, layout).apply {
             setTextViewText(R.id.label, label)
@@ -217,6 +292,8 @@ object RestTimer {
         val big = views(R.layout.notif_rest_big).apply {
             setTextViewText(R.id.total, fmt(totalMs))
             setProgressBar(R.id.progress, 1000, progress, false)
+            if (whoopPi != null) setOnClickPendingIntent(R.id.openWhoop, whoopPi)
+            else setViewVisibility(R.id.openWhoop, android.view.View.GONE)
         }
 
         return NotificationCompat.Builder(ctx, CHANNEL)
@@ -306,7 +383,10 @@ object RestTimer {
     private fun nm(ctx: Context) = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 }
 
-/** Holds the rest notification as a foreground service so it can be colorized. */
+/**
+ * Holds the WellRest notification as a foreground service (so it can be colorized like WHOOP's):
+ * for the whole WHOOP workout, and for any rest started outside one.
+ */
 class RestService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -325,8 +405,8 @@ class RestService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!RestTimer.isRunning) {
-            // Rest ended while the service was starting: leave cleanly
+        if (!RestTimer.hasSomethingToShow) {
+            // Rest/workout ended while the service was starting: leave cleanly
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             RestTimer.svc = RestTimer.Svc.NONE
             stopSelf()
@@ -336,8 +416,16 @@ class RestService : Service() {
 
     override fun onDestroy() {
         // A new rest may already have restarted the service; only reset if nothing is running
-        if (!RestTimer.isRunning) RestTimer.svc = RestTimer.Svc.NONE
+        if (!RestTimer.hasSomethingToShow) RestTimer.svc = RestTimer.Svc.NONE
         super.onDestroy()
+    }
+}
+
+/** "▶" on the Ready notification: start a rest with the saved length. */
+class StartReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        LogStore.add("rest started from the notification")
+        RestTimer.start(context, Prefs(context).restSeconds)
     }
 }
 

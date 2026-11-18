@@ -36,7 +36,9 @@ class WhoopListener : NotificationListenerService() {
     private val resetState = Runnable {
         resting = null
         lastSummary = null
+        workoutKey = null
         LogStore.add("workout ended, state reset")
+        RestTimer.setWorkoutActive(this, false)
     }
 
     override fun onListenerConnected() {
@@ -45,6 +47,8 @@ class WhoopListener : NotificationListenerService() {
         val active = runCatching { activeNotifications.toList() }.getOrDefault(emptyList())
         LogStore.add("listener connected — ${active.count { it.packageName == pkg }} WHOOP notification(s) active · ${powerState()}")
         active.filter { it.packageName == pkg }.forEach { onNotificationPosted(it) }
+        // No WHOOP card any more (e.g. the app was killed mid-workout): drop a stale Ready notification
+        if (active.none { it.packageName == pkg }) RestTimer.setWorkoutActive(this, false)
     }
 
     override fun onListenerDisconnected() {
@@ -71,6 +75,7 @@ class WhoopListener : NotificationListenerService() {
         }
         workoutKey = sbn.key
         handler.removeCallbacks(resetState) // card is back: not the end of the workout
+        RestTimer.setWorkoutActive(this, true)
 
         // Log only structural changes (ignore ticking clock / heart rate)
         val summary = (text + read.extras).replace(Regex("\\d+"), "#")

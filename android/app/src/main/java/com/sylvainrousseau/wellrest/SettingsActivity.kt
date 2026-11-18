@@ -54,7 +54,7 @@ class SettingsActivity : Activity() {
         // --- Setup
         // --- Workout behaviour (moved from the main screen)
         val workout = section(col, "WORKOUT")
-        workout.addView(toggle("Auto-start after each set", "Starts the rest when WHOOP moves to “Up Next”", p.enabled) { p.enabled = it })
+        workout.addView(toggle("Auto-start after each set", "Starts the rest when WHOOP moves to “Up Next”", p.enabled) { p.enabled = it; RestTimer.refresh(this) })
         workout.addView(divider())
         workout.addView(toggle("Sound when rest ends", "Plays in your headphones, even on vibrate", p.soundEnabled) {
             p.soundEnabled = it
